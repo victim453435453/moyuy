@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h1 id="r">Testing...</h1>
+<script>
+var results = {
+  WebWorkers: typeof Worker !== 'undefined',
+  SharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
+  Atomics: typeof Atomics !== 'undefined',
+  WASM: typeof WebAssembly !== 'undefined',
+  BigInt: typeof BigInt !== 'undefined'
+};
+
+var out = '';
+for (var k in results) {
+  out += k + ': ' + (results[k] ? '✅' : '❌') + '\n';
+}
+document.getElementById('r').innerText = out;
+document.title = JSON.stringify(results);
+</script>
+</body>
+</html>
