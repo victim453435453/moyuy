@@ -3,41 +3,40 @@
 <h1 id="s">Running...</h1>
 <script>
 var wCode = `
-  // FTL JIT'i ısıt
-  function target(arr, i) {
-    return arr[i] + arr[i+1];
+  function leak(o) {
+    return o.a + o.b + o.c + o.d;
   }
-  var a = new Float64Array(1000);
-  for (var i = 0; i < 1000000; i++) {
-    target(a, (i % 998));
-  }
-  // Tip değiştir — JIT assumption'ı kır
-  for (var i = 0; i < 1000000; i++) {
-    var b = [1,2,3,4,5];
-    target(b, 0);
-    var c = [1.1, 2.2, 3.3, 4.4, 5.5];
-    target(c, 0);
+  // JIT compile
+  for (var i = 0; i < 300000; i++)
+    leak({a:1.1,b:2.2,c:3.3,d:4.4});
+
+  // GC pressure + JIT aynı anda
+  while(true) {
+    var arr = [];
+    for (var i = 0; i < 10000; i++)
+      arr.push({a:i,b:i+1,c:i+2,d:i+3});
+    leak(arr[0]);
+    arr = null;
   }
 `;
 
-var blob = new Blob([wCode], {type:'text/javascript'});
+var blob = new Blob([wCode],{type:'text/javascript'});
 var u = URL.createObjectURL(blob);
+for (var i = 0; i < 6; i++) new Worker(u);
 
-// 8 worker — maksimum concurrent JIT pressure
-for (var i = 0; i < 8; i++) new Worker(u);
+// Ana thread: GC zorla
+function leak(o){return o.a+o.b+o.c+o.d;}
+for (var i=0;i<300000;i++) leak({a:1.1,b:2.2,c:3.3,d:4.4});
 
-// Ana thread aynı anda farklı tip pattern
-function target(arr, i) { return arr[i] + arr[i+1]; }
-(function() {
-  for (var i = 0; i < 2000000; i++) {
-    var x = {};
-    x.a = i; x.b = i+1;
-    target([x.a, x.b, 0], 0);
-    target([1.1, 2.2, 3.3], 0);
-    target(new Int32Array(4), 0);
-  }
-})();
-
-document.getElementById('s').textContent = 'Done - no crash';
+var tick = 0;
+function gcStress() {
+  var big = new Array(100000).fill({a:1.1,b:2.2,c:3.3,d:4.4});
+  big.forEach(leak);
+  big = null;
+  tick++;
+  if (tick < 200) setTimeout(gcStress, 0);
+  else document.getElementById('s').textContent = 'Done - no crash';
+}
+gcStress();
 </script>
 </body></html>
