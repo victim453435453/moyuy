@@ -2,41 +2,41 @@
 <html><body>
 <h1 id="s">Running...</h1>
 <script>
-var wCode = `
-  function leak(o) {
-    return o.a + o.b + o.c + o.d;
-  }
-  // JIT compile
-  for (var i = 0; i < 300000; i++)
-    leak({a:1.1,b:2.2,c:3.3,d:4.4});
+// Hafızayı ölçerek crash noktasını bul
+var log = [];
 
-  // GC pressure + JIT aynı anda
+var wCode = `
+  function f(o) { return o.x + o.y; }
+  for(var i=0;i<200000;i++) f({x:1.1,y:2.2});
   while(true) {
-    var arr = [];
-    for (var i = 0; i < 10000; i++)
-      arr.push({a:i,b:i+1,c:i+2,d:i+3});
-    leak(arr[0]);
-    arr = null;
+    f({x:1,y:2});
+    f({x:"a",y:"b"});
+    f({x:1.1,y:2.2});
   }
 `;
+var u = URL.createObjectURL(
+  new Blob([wCode],{type:'text/javascript'})
+);
+for(var i=0;i<4;i++) new Worker(u);
 
-var blob = new Blob([wCode],{type:'text/javascript'});
-var u = URL.createObjectURL(blob);
-for (var i = 0; i < 6; i++) new Worker(u);
+function f(o){return o.x+o.y;}
+for(var i=0;i<200000;i++) f({x:1.1,y:2.2});
 
-// Ana thread: GC zorla
-function leak(o){return o.a+o.b+o.c+o.d;}
-for (var i=0;i<300000;i++) leak({a:1.1,b:2.2,c:3.3,d:4.4});
-
-var tick = 0;
-function gcStress() {
-  var big = new Array(100000).fill({a:1.1,b:2.2,c:3.3,d:4.4});
-  big.forEach(leak);
-  big = null;
-  tick++;
-  if (tick < 200) setTimeout(gcStress, 0);
-  else document.getElementById('s').textContent = 'Done - no';
+var n=0;
+function run(){
+  try {
+    for(var i=0;i<10000;i++){
+      f({x:1,y:2});
+      f({x:"str",y:"str"});
+      f({x:{},y:{}});
+    }
+    n++;
+    document.getElementById('s').textContent='iter:'+n;
+    setTimeout(run,0);
+  } catch(e) {
+    document.getElementById('s').textContent='EXCEPTION: '+e;
+  }
 }
-gcStress();
+run();
 </script>
 </body></html>
